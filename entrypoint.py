@@ -98,22 +98,15 @@ def get_review(
             {chunked_diff}
             """
             
-            raw_response = client.text_generation(
+            response = client.text_generation(
                 prompt,
                 temperature=temperature,
                 max_new_tokens=max_new_tokens,
                 top_p=top_p,
                 top_k=top_k,
-                return_full_text=False,
-                raw_response=True
+                return_full_text=False
             )
-            if hasattr(raw_response, 'text'):
-                response = raw_response.text
-            elif hasattr(raw_response, 'content'):
-                response = raw_response.content.decode('utf-8') if isinstance(raw_response.content, bytes) else str(raw_response.content)
-            else:
-                response = str(raw_response)
-            chunked_reviews.append(response)
+            chunked_reviews.append(str(response))
 
         # If the chunked reviews are only one, return it
         if len(chunked_reviews) == 1:
@@ -129,23 +122,15 @@ def get_review(
         {combined_reviews}
         """
         
-        raw_summary_response = client.text_generation(
+        summarized_review = client.text_generation(
             summary_prompt,
             temperature=temperature,
             max_new_tokens=max_new_tokens,
             top_p=top_p,
             top_k=top_k,
-            return_full_text=False,
-            raw_response=True
+            return_full_text=False
         )
-        if hasattr(raw_summary_response, 'text'):
-            final_summary = raw_summary_response.text
-        elif hasattr(raw_summary_response, 'content'):
-            final_summary = raw_summary_response.content.decode('utf-8') if isinstance(raw_summary_response.content, bytes) else str(raw_summary_response.content)
-        else:
-            final_summary = str(raw_summary_response)
-        
-        return chunked_reviews, final_summary
+        return chunked_reviews, str(summarized_review)
         
     except Exception as e:
         logger.error(f"Error generating review: {e}")
