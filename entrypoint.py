@@ -15,7 +15,7 @@ from typing import List
 
 import click
 import requests
-from langchain import HuggingFaceHub, LLMChain, PromptTemplate
+from huggingface_hub import InferenceClient
 from loguru import logger
 
 
@@ -72,52 +72,70 @@ def get_review(
         prompt_chunk_size: int
 ):
     """Get a review"""
-    # Chunk the prompt
-    chunked_diff_list = chunk_string(input_string=diff, chunk_size=prompt_chunk_size)
-    # Get summary by chunk
-    chunked_reviews = []
-    llm = HuggingFaceHub(
-        repo_id=repo_id,
-        model_kwargs={"temperature": temperature,
-                      "max_new_tokens": max_new_tokens,
-                      "top_p": top_p,
-                      "top_k": top_k},
-                      huggingfacehub_api_token=os.getenv("API_KEY")
-    )
-    for chunked_diff in chunked_diff_list:
-        question=chunked_diff
-        template = """Provide a concise summary of the bug found in the code, describing its characteristics, 
-        location, and potential effects on the overall functionality and performance of the application.
-        Present the potential issues and errors first, following by the most important findings, in your summary
+    try:
+        api_key = os.getenv("API_KEY") or os.getenv("HUGGINGFACEHUB_API_TOKEN")
+        if not api_key:
+            raise ValueError("No API key found. Please set API_KEY or HUGGINGFACEHUB_API_TOKEN environment variable.")
+        
+        client = InferenceClient(
+            model=repo_id,
+            token=api_key
+        )
+
+        # Chunk the prompt
+        chunked_diff_list = chunk_string(input_string=diff, chunk_size=prompt_chunk_size)
+        # Get summary by chunk
+        chunked_reviews = []
+        
+        for chunked_diff in chunked_diff_list:
+            prompt = f"""Provide a concise summary of the bug found in the code, describing its characteristics, 
+            location, and potential effects on the overall functionality and performance of the application.
+            Present the potential issues and errors first, following by the most important findings, in your summary
+            Important: Include block of code / diff in the summary also the line number.
+
+            Diff:
+
+            {chunked_diff}
+            """
+            
+            response = client.text_generation(
+                prompt,
+                temperature=temperature,
+                max_new_tokens=max_new_tokens,
+                top_p=top_p,
+                top_k=top_k,
+                return_full_text=False
+            )
+            chunked_reviews.append(response)
+
+        # If the chunked reviews are only one, return it
+        if len(chunked_reviews) == 1:
+            return chunked_reviews, chunked_reviews[0]
+
+        combined_reviews = "\n".join(chunked_reviews)
+        summary_prompt = f"""Summarize the following file changed in a pull request submitted by a developer on GitHub,
+        focusing on major modifications, additions, deletions, and any significant updates within the files.
+        Do not include the file name in the summary and list the summary with bullet points.
         Important: Include block of code / diff in the summary also the line number.
-
+        
         Diff:
-
-        {question}
+        {combined_reviews}
         """
-
-        prompt = PromptTemplate(template=template, input_variables=["question"])
-        llm_chain = LLMChain(prompt=prompt, llm=llm)
-        review_result = llm_chain.run(question)
-        chunked_reviews.append(review_result)
-
-    # If the chunked reviews are only one, return it
-    if len(chunked_reviews) == 1:
-        return chunked_reviews, chunked_reviews[0]
-
-    question="\n".join(chunked_reviews)
-    template = """Summarize the following file changed in a pull request submitted by a developer on GitHub,
-    focusing on major modifications, additions, deletions, and any significant updates within the files.
-    Do not include the file name in the summary and list the summary with bullet points.
-    Important: Include block of code / diff in the summary also the line number.
-    
-    Diff:
-    {question}
-    """
-    prompt = PromptTemplate(template=template, input_variables=["question"])
-    llm_chain = LLMChain(prompt=prompt, llm=llm)
-    summarized_review = llm_chain.run(question)
-    return chunked_reviews, summarized_review
+        
+        summarized_review = client.text_generation(
+            summary_prompt,
+            temperature=temperature,
+            max_new_tokens=max_new_tokens,
+            top_p=top_p,
+            top_k=top_k,
+            return_full_text=False
+        )
+        return chunked_reviews, summarized_review
+        
+    except Exception as e:
+        logger.error(f"Error generating review: {e}")
+        error_message = f"Error generating review: {str(e)}"
+        return [error_message], error_message
 
 
 def format_review_comment(summarized_review: str, chunked_reviews: List[str]) -> str:
