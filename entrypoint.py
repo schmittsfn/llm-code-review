@@ -34,21 +34,18 @@ def check_required_env_vars():
 
 
 def create_a_comment_to_pull_request(
-        github_token: str,
-        github_repository: str,
-        pull_request_number: int,
-        git_commit_hash: str,
-        body: str):
+    github_token: str,
+    github_repository: str,
+    pull_request_number: int,
+    git_commit_hash: str,
+    body: str,
+):
     """Create a comment to a pull request"""
     headers = {
         "Accept": "application/vnd.github.v3.patch",
-        "authorization": f"Bearer {github_token}"
+        "authorization": f"Bearer {github_token}",
     }
-    data = {
-        "body": body,
-        "commit_id": git_commit_hash,
-        "event": "COMMENT"
-    }
+    data = {"body": body, "commit_id": git_commit_hash, "event": "COMMENT"}
     url = f"https://api.github.com/repos/{github_repository}/pulls/{pull_request_number}/reviews"
     response = requests.post(url, headers=headers, data=json.dumps(data))
     return response
@@ -58,35 +55,36 @@ def chunk_string(input_string: str, chunk_size) -> List[str]:
     """Chunk a string"""
     chunked_inputs = []
     for i in range(0, len(input_string), chunk_size):
-        chunked_inputs.append(input_string[i:i + chunk_size])
+        chunked_inputs.append(input_string[i : i + chunk_size])
     return chunked_inputs
 
 
 def get_review(
-        repo_id: str,
-        diff: str,
-        temperature: float,
-        max_new_tokens: int,
-        top_p: float,
-        top_k: int,
-        prompt_chunk_size: int
+    repo_id: str,
+    diff: str,
+    temperature: float,
+    max_new_tokens: int,
+    top_p: float,
+    top_k: int,
+    prompt_chunk_size: int,
 ):
     """Get a review"""
     try:
         api_key = os.getenv("API_KEY") or os.getenv("HUGGINGFACEHUB_API_TOKEN")
         if not api_key:
-            raise ValueError("No API key found. Please set API_KEY or HUGGINGFACEHUB_API_TOKEN environment variable.")
-        
-        client = InferenceClient(
-            model=repo_id,
-            token=api_key
-        )
+            raise ValueError(
+                "No API key found. Please set API_KEY or HUGGINGFACEHUB_API_TOKEN environment variable."
+            )
+
+        client = InferenceClient(model=repo_id, token=api_key)
 
         # Chunk the prompt
-        chunked_diff_list = chunk_string(input_string=diff, chunk_size=prompt_chunk_size)
+        chunked_diff_list = chunk_string(
+            input_string=diff, chunk_size=prompt_chunk_size
+        )
         # Get summary by chunk
         chunked_reviews = []
-        
+
         for chunked_diff in chunked_diff_list:
             prompt = f"""Provide a concise summary of the bug found in the code, describing its characteristics, 
             location, and potential effects on the overall functionality and performance of the application.
@@ -97,14 +95,14 @@ def get_review(
 
             {chunked_diff}
             """
-            
+
             response = client.text_generation(
                 prompt,
                 temperature=temperature,
                 max_new_tokens=max_new_tokens,
                 top_p=top_p,
                 top_k=top_k,
-                return_full_text=False
+                return_full_text=False,
             )
             chunked_reviews.append(str(response))
 
@@ -121,17 +119,17 @@ def get_review(
         Diff:
         {combined_reviews}
         """
-        
+
         summarized_review = client.text_generation(
             summary_prompt,
             temperature=temperature,
             max_new_tokens=max_new_tokens,
             top_p=top_p,
             top_k=top_k,
-            return_full_text=False
+            return_full_text=False,
         )
         return chunked_reviews, str(summarized_review)
-        
+
     except Exception as e:
         logger.error(f"Error generating review: {e}")
         error_message = f"Error generating review: {str(e)}"
@@ -153,22 +151,44 @@ def format_review_comment(summarized_review: str, chunked_reviews: List[str]) ->
 
 @click.command()
 @click.option("--diff", type=click.STRING, required=True, help="Pull request diff")
-@click.option("--diff-chunk-size", type=click.INT, required=False, default=3500, help="Pull request diff")
-@click.option("--repo-id", type=click.STRING, required=False, default="gpt-3.5-turbo", help="Model")
-@click.option("--temperature", type=click.FLOAT, required=False, default=0.1, help="Temperature")
-@click.option("--max-new-tokens", type=click.INT, required=False, default=250, help="Max tokens")
+@click.option(
+    "--diff-chunk-size",
+    type=click.INT,
+    required=False,
+    default=3500,
+    help="Pull request diff",
+)
+@click.option(
+    "--repo-id",
+    type=click.STRING,
+    required=False,
+    default="gpt-3.5-turbo",
+    help="Model",
+)
+@click.option(
+    "--temperature", type=click.FLOAT, required=False, default=0.1, help="Temperature"
+)
+@click.option(
+    "--max-new-tokens", type=click.INT, required=False, default=250, help="Max tokens"
+)
 @click.option("--top-p", type=click.FLOAT, required=False, default=1.0, help="Top N")
 @click.option("--top-k", type=click.INT, required=False, default=1.0, help="Top T")
-@click.option("--log-level", type=click.STRING, required=False, default="INFO", help="Presence penalty")
+@click.option(
+    "--log-level",
+    type=click.STRING,
+    required=False,
+    default="INFO",
+    help="Presence penalty",
+)
 def main(
-        diff: str,
-        diff_chunk_size: int,
-        repo_id: str,
-        temperature: float,
-        max_new_tokens: int,
-        top_p: float,
-        top_k: int,
-        log_level: str
+    diff: str,
+    diff_chunk_size: int,
+    repo_id: str,
+    temperature: float,
+    max_new_tokens: int,
+    top_p: float,
+    top_k: int,
+    log_level: str,
 ):
     # Set log level
     logger.level(log_level)
@@ -183,21 +203,22 @@ def main(
         max_new_tokens=max_new_tokens,
         top_p=top_p,
         top_k=top_k,
-        prompt_chunk_size=diff_chunk_size
+        prompt_chunk_size=diff_chunk_size,
     )
     logger.debug(f"Summarized review: {summarized_review}")
     logger.debug(f"Chunked reviews: {chunked_reviews}")
 
     # Format reviews
-    review_comment = format_review_comment(summarized_review=summarized_review,
-                                           chunked_reviews=chunked_reviews)
+    review_comment = format_review_comment(
+        summarized_review=summarized_review, chunked_reviews=chunked_reviews
+    )
     # Create a comment to a pull request
     create_a_comment_to_pull_request(
         github_token=os.getenv("GITHUB_TOKEN"),
         github_repository=os.getenv("GITHUB_REPOSITORY"),
         pull_request_number=int(os.getenv("GITHUB_PULL_REQUEST_NUMBER")),
         git_commit_hash=os.getenv("GIT_COMMIT_HASH"),
-        body=review_comment
+        body=review_comment,
     )
 
 

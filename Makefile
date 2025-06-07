@@ -26,6 +26,12 @@ build-docker:
 
 
 lint:
+lint-ruff:
+	ruff check .            # Run lint
+	ruff check . --fix      # Auto-fix
+	ruff format .           # Format code
+	git add .
+	git commit -m "Automated lint and format fixes" || echo "No changes to commit"
 
 lint-python:
 	pylint --rcfile=.pylintrc gpt_code_review_action
